@@ -1,4 +1,5 @@
 const Astrologer = require("../models/Astrologer");
+const Banner = require("../models/Banner");
 
 // Temporary in-memory storage for testing without MongoDB
 let tempAstrologers = [];
@@ -179,6 +180,47 @@ exports.deleteProduct = async (req, res) => {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ message: "Product not found" });
     res.json({ message: "Product deleted" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Banner CRUD (limit to 4 active banners)
+exports.getBanners = async (_req, res) => {
+  try {
+    const items = await Banner.find().sort({ order: 1, createdAt: -1 });
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.createBanner = async (req, res) => {
+  try {
+    const count = await Banner.countDocuments();
+    if (count >= 4) return res.status(400).json({ message: "Maximum of 4 banners allowed" });
+    const created = await Banner.create(req.body);
+    res.status(201).json(created);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+exports.updateBanner = async (req, res) => {
+  try {
+    const updated = await Banner.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    if (!updated) return res.status(404).json({ message: "Banner not found" });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+exports.deleteBanner = async (req, res) => {
+  try {
+    const deleted = await Banner.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ message: "Banner not found" });
+    res.json({ message: "Banner deleted" });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

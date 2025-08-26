@@ -18,12 +18,26 @@ const {
   toggleAstrologerStatus,
 } = require("../controllers/dashboardController");
 
+// Banner routes (unprotected like astrologers for now)
+const {
+  getBanners,
+  createBanner,
+  updateBanner,
+  deleteBanner,
+} = require("../controllers/dashboardController");
+
 router.get("/astrologers", getAstrologers);
 router.get("/astrologers/:id", getAstrologer);
 router.post("/astrologers", createAstrologer);
 router.put("/astrologers/:id", updateAstrologer);
 router.delete("/astrologers/:id", deleteAstrologer);
 router.patch("/astrologers/:id/toggle", toggleAstrologerStatus);
+
+// Banner CRUD
+router.get("/banners", getBanners);
+router.post("/banners", createBanner);
+router.put("/banners/:id", updateBanner);
+router.delete("/banners/:id", deleteBanner);
 
 router.get("/products", auth, getProducts); // Optional: for dashboard listing
 router.post("/products", auth, createProduct);
