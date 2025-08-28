@@ -5,6 +5,7 @@ const connectDB = require("./config/db");
 const websiteRoutes = require("./routes/websiteRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const authRoutes = require("./routes/authRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
 
 dotenv.config();
 const app = express();
@@ -20,6 +21,7 @@ connectDB();
 app.use("/api/website", websiteRoutes); // Public APIs for website
 app.use("/api/dashboard", dashboardRoutes); // Protected APIs for dashboard
 app.use("/api/auth", authRoutes); // Auth APIs for login
+app.use("/api/payment", paymentRoutes); // Payment APIs for Paytm Business
 
 // Error handling middleware
 app.use((err, req, res, next) => {
