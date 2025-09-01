@@ -1,16 +1,10 @@
-const PaytmChecksum = require('paytmchecksum');
+const Razorpay = require('razorpay');
 
-// Paytm Business configuration (will be moved to environment variables)
-const PAYTM_CONFIG = {
-  MERCHANT_ID: process.env.PAYTM_MERCHANT_ID || 'YOUR_MERCHANT_ID',
-  MERCHANT_KEY: process.env.PAYTM_MERCHANT_KEY || 'YOUR_MERCHANT_KEY',
-  WEBSITE: process.env.PAYTM_WEBSITE || 'WEBSTAGING',
-  INDUSTRY_TYPE: process.env.PAYTM_INDUSTRY_TYPE || 'Retail',
-  CHANNEL_ID: process.env.PAYTM_CHANNEL_ID || 'WEB',
-  BASE_URL: process.env.NODE_ENV === 'production' 
-    ? 'https://securegw.paytm.in' 
-    : 'https://securegw-stage.paytm.in'
-};
+// Razorpay configuration
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_dummy',
+  key_secret: process.env.RAZORPAY_KEY_SECRET || 'dummy_secret',
+});
 
 // Initiate payment
 exports.initiatePayment = async (req, res) => {
@@ -35,37 +29,36 @@ exports.initiatePayment = async (req, res) => {
     // Generate unique order ID if not provided
     const uniqueOrderId = orderId || `ORDER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Prepare payment parameters
-    const paytmParams = {
-      MID: PAYTM_CONFIG.MERCHANT_ID,
-      ORDER_ID: uniqueOrderId,
-      CUST_ID: customerEmail,
-      TXN_AMOUNT: amount.toString(),
-      CHANNEL_ID: PAYTM_CONFIG.CHANNEL_ID,
-      WEBSITE: PAYTM_CONFIG.WEBSITE,
-      INDUSTRY_TYPE_ID: PAYTM_CONFIG.INDUSTRY_TYPE,
-      CALLBACK_URL: `${req.protocol}://${req.get('host')}/api/payment/callback`,
-      EMAIL: customerEmail,
-      MOBILE_NO: customerPhone,
-      CUSTOMER_NAME: customerName,
-      // Additional custom fields for astrology booking
-      CUSTOM_FIELD1: astrologerName || '',
-      CUSTOM_FIELD2: packageName || '',
-      CUSTOM_FIELD3: 'Astrology Consultation'
+    // Create Razorpay order
+    const orderOptions = {
+      amount: Math.round(amount * 100), // Razorpay expects amount in paise
+      currency: 'INR',
+      receipt: uniqueOrderId,
+      notes: {
+        customerName: customerName,
+        customerEmail: customerEmail,
+        customerPhone: customerPhone,
+        astrologerName: astrologerName || '',
+        packageName: packageName || '',
+        serviceType: 'Astrology Consultation'
+      }
     };
 
-    // Generate checksum
-    const checksum = await PaytmChecksum.generateSignature(paytmParams, PAYTM_CONFIG.MERCHANT_KEY);
-
-    // Add checksum to params
-    paytmParams.CHECKSUMHASH = checksum;
+    const order = await razorpay.orders.create(orderOptions);
 
     res.json({
       success: true,
       data: {
-        paytmParams,
-        orderId: uniqueOrderId,
-        redirectUrl: `${PAYTM_CONFIG.BASE_URL}/theia/processTransaction`
+        orderId: order.id,
+        receipt: order.receipt,
+        amount: order.amount,
+        currency: order.currency,
+        key: process.env.RAZORPAY_KEY_ID,
+        customerName,
+        customerEmail,
+        customerPhone,
+        astrologerName,
+        packageName
       }
     });
 
@@ -79,44 +72,43 @@ exports.initiatePayment = async (req, res) => {
   }
 };
 
-// Payment callback handler
-exports.paymentCallback = async (req, res) => {
+// Payment verification
+exports.verifyPayment = async (req, res) => {
   try {
     const { 
-      ORDERID, 
-      TXNID, 
-      TXNAMOUNT, 
-      STATUS, 
-      RESPCODE, 
-      RESPMSG, 
-      CHECKSUMHASH 
+      razorpay_order_id, 
+      razorpay_payment_id, 
+      razorpay_signature,
+      customerName,
+      customerEmail,
+      customerPhone,
+      astrologerName,
+      packageName
     } = req.body;
 
-    // Verify checksum
-    const isValidChecksum = PaytmChecksum.verifySignature(req.body, PAYTM_CONFIG.MERCHANT_KEY, CHECKSUMHASH);
-
-    if (!isValidChecksum) {
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Invalid checksum' 
+        message: 'Missing payment verification parameters' 
       });
     }
 
-    // Process payment status
-    let paymentStatus = 'FAILED';
-    let message = RESPMSG || 'Payment failed';
+    // Verify payment signature
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const crypto = require('crypto');
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(body.toString())
+      .digest('hex');
 
-    if (STATUS === 'TXN_SUCCESS' && RESPCODE === '01') {
-      paymentStatus = 'SUCCESS';
-      message = 'Payment successful';
-    } else if (STATUS === 'TXN_FAILURE') {
-      paymentStatus = 'FAILED';
-      message = RESPMSG || 'Payment failed';
-    } else if (STATUS === 'PENDING') {
-      paymentStatus = 'PENDING';
-      message = 'Payment pending';
+    if (expectedSignature !== razorpay_signature) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid payment signature' 
+      });
     }
 
+    // Payment is verified successfully
     // Here you would typically:
     // 1. Update your database with payment status
     // 2. Send confirmation emails
@@ -124,20 +116,45 @@ exports.paymentCallback = async (req, res) => {
     // 4. Log the transaction
 
     const paymentResult = {
-      orderId: ORDERID,
-      transactionId: TXNID,
-      amount: TXNAMOUNT,
-      status: paymentStatus,
-      message: message,
-      responseCode: RESPCODE,
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      status: 'SUCCESS',
+      message: 'Payment verified successfully',
+      customerName,
+      customerEmail,
+      customerPhone,
+      astrologerName,
+      packageName,
       timestamp: new Date().toISOString()
     };
 
-    // For now, we'll redirect to frontend with payment status
-    // In production, you might want to store this in database and redirect to a proper success/failure page
+    // Redirect to frontend with payment status
     const redirectUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment-status?${new URLSearchParams(paymentResult).toString()}`;
     
     res.redirect(redirectUrl);
+
+  } catch (error) {
+    console.error('Payment verification error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Payment verification failed',
+      error: error.message 
+    });
+  }
+};
+
+// Payment callback handler (for webhook if needed)
+exports.paymentCallback = async (req, res) => {
+  try {
+    const { 
+      razorpay_order_id, 
+      razorpay_payment_id, 
+      razorpay_signature 
+    } = req.body;
+
+    // Verify webhook signature if needed
+    // For now, just acknowledge the webhook
+    res.json({ success: true, message: 'Webhook received' });
 
   } catch (error) {
     console.error('Payment callback error:', error);
@@ -161,13 +178,30 @@ exports.getPaymentStatus = async (req, res) => {
       });
     }
 
-    // Here you would typically fetch payment status from your database
-    // For now, returning a mock response
+    // Fetch order details from Razorpay
+    const order = await razorpay.orders.fetch(orderId);
+    
+    // Fetch payment details if payment exists
+    let paymentDetails = null;
+    try {
+      const payments = await razorpay.orders.fetchPayments(orderId);
+      if (payments.items && payments.items.length > 0) {
+        paymentDetails = payments.items[0];
+      }
+    } catch (error) {
+      console.log('No payment found for order:', orderId);
+    }
+
     res.json({
       success: true,
       data: {
-        orderId,
-        status: 'PENDING', // This should come from your database
+        orderId: order.id,
+        amount: order.amount / 100, // Convert from paise to rupees
+        currency: order.currency,
+        status: order.status,
+        receipt: order.receipt,
+        paymentStatus: paymentDetails ? paymentDetails.status : 'PENDING',
+        paymentId: paymentDetails ? paymentDetails.id : null,
         message: 'Payment status retrieved successfully'
       }
     });
@@ -177,6 +211,49 @@ exports.getPaymentStatus = async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to get payment status',
+      error: error.message 
+    });
+  }
+};
+
+// Refund payment
+exports.refundPayment = async (req, res) => {
+  try {
+    const { paymentId, amount, reason } = req.body;
+
+    if (!paymentId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Payment ID is required' 
+      });
+    }
+
+    const refundOptions = {
+      amount: amount ? Math.round(amount * 100) : undefined, // Amount in paise, if not provided will refund full amount
+      speed: 'normal', // or 'optimum'
+      notes: {
+        reason: reason || 'Customer request'
+      }
+    };
+
+    const refund = await razorpay.payments.refund(paymentId, refundOptions);
+
+    res.json({
+      success: true,
+      data: {
+        refundId: refund.id,
+        paymentId: refund.payment_id,
+        amount: refund.amount / 100,
+        status: refund.status,
+        message: 'Refund initiated successfully'
+      }
+    });
+
+  } catch (error) {
+    console.error('Refund error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to process refund',
       error: error.message 
     });
   }
