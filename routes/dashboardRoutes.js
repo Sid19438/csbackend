@@ -18,6 +18,16 @@ const {
   toggleAstrologerStatus,
 } = require("../controllers/dashboardController");
 
+// Puja routes (unprotected to match current frontend)
+const {
+  getPujas,
+  getPuja,
+  createPuja,
+  updatePuja,
+  deletePuja,
+  togglePujaStatus,
+} = require("../controllers/pujaController");
+
 // Banner routes (unprotected like astrologers for now)
 const {
   getBanners,
@@ -32,6 +42,14 @@ router.post("/astrologers", createAstrologer);
 router.put("/astrologers/:id", updateAstrologer);
 router.delete("/astrologers/:id", deleteAstrologer);
 router.patch("/astrologers/:id/toggle", toggleAstrologerStatus);
+
+// Puja CRUD
+router.get("/pujas", getPujas);
+router.get("/pujas/:id", getPuja);
+router.post("/pujas", createPuja);
+router.put("/pujas/:id", updatePuja);
+router.delete("/pujas/:id", deletePuja);
+router.patch("/pujas/:id/toggle", togglePujaStatus);
 
 // Banner CRUD
 router.get("/banners", getBanners);
